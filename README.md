@@ -1,3 +1,5 @@
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/new?template=https://github.com/ahmedmassoud92/lna2)
+
 # Libya Political Trends 3D — Railway Single Service
 
 This package serves **frontend + API** from one Flask app (easiest for Railway).
