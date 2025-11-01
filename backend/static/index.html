@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Libya Political Trends 3D</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet" />
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+    <style>
+      body { background: #0b1220; color: #e5eefc; }
+      #map { width: 100%; height: 500px; border-radius: 1rem; overflow: hidden; }
+      .card { background: #0f172a; border: 1px solid #1f2b46; border-radius: 1rem; }
+      .pill { background: #0b1220; border: 1px solid #1f2b46; border-radius: 999px; padding: 6px 10px; }
+      .badge { background: #12213d; border: 1px solid #1f2b46; border-radius: .5rem; padding: 2px 6px; }
+      .muted { color: #9fb1d1 }
+    </style>
+  </head>
+  <body class="min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const API_BASE = ""; // same-origin (Flask serves API + frontend)
+
+      function TrendMap3D({ points, token }) {
+        const mapRef = React.useRef(null);
+        React.useEffect(() => {
+          if (!token) return;
+          mapboxgl.accessToken = token;
+          const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/dark-v11',
+            center: [17.228331, 26.3351],
+            zoom: 4.3,
+            pitch: 45,
+            bearing: -17.6,
+            antialias: true
+          });
+          map.on('load', () => {
+            map.addSource('mapbox-dem', {
+              'type': 'raster-dem',
+              'url': 'mapbox://mapbox.mapbox-terrain-dem-v1',
+              'tileSize': 512,
+              'maxzoom': 14
+            });
+            map.setTerrain({ 'source': 'mapbox-dem', 'exaggeration': 1.2 });
+            if (points && points.length) {
+              const geojson = {
+                type: 'FeatureCollection',
+                features: points.map(p => ({
+                  type: 'Feature',
+                  properties: { name: p.city, score: p.score },
+                  geometry: { type: 'Point', coordinates: [p.lon, p.lat] }
+                }))
+              };
+              map.addSource('trend-points', { type: 'geojson', data: geojson });
+              map.addLayer({
+                'id': 'trend-points-circle',
+                'type': 'circle',
+                'source': 'trend-points',
+                'paint': {
+                  'circle-radius': ['interpolate', ['linear'], ['get', 'score'], 0, 5, 100, 18],
+                  'circle-color': '#49a6ff',
+                  'circle-opacity': 0.8
+                }
+              });
+            }
+          });
+          mapRef.current = map;
+          return () => map.remove();
+        }, [token]);
+
+        React.useEffect(() => {
+          const map = mapRef.current;
+          if (!map || !map.isStyleLoaded() || !points) return;
+          const geojson = {
+            type: 'FeatureCollection',
+            features: points.map(p => ({
+              type: 'Feature',
+              properties: { name: p.city, score: p.score },
+              geometry: { type: 'Point', coordinates: [p.lon, p.lat] }
+            }))
+          };
+          if (map.getSource('trend-points')) {
+            map.getSource('trend-points').setData(geojson);
+          }
+        }, [points]);
+
+        return <div id="map" className="w-full"></div>;
+      }
+
+      function App() {
+        const [q, setQ] = React.useState("القيادة العامة للقوات المسلحة الليبية");
+        const [token, setToken] = React.useState("");
+        const [points, setPoints] = React.useState([]);
+        const [stats, setStats] = React.useState(null);
+        const [loading, setLoading] = React.useState(false);
+        const [ai, setAi] = React.useState(null);
+
+        const search = async () => {
+          setLoading(true);
+          try {
+            const r = await fetch("/api/search?q=" + encodeURIComponent(q));
+            const j = await r.json();
+            setStats(j);
+            setPoints(j.geo_points || []);
+            setAi(j.ai_advice || null);
+          } catch (e) {
+            alert("Search failed: " + e);
+          } finally {
+            setLoading(false);
+          }
+        };
+
+        React.useEffect(() => {
+          fetch("/api/config").then(r => r.json()).then(j => setToken(j.mapbox_token || ""));
+        }, []);
+
+        return (
+          <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-6">
+            <header className="flex items-center justify-between">
+              <h1 className="text-2xl md:text-3xl font-bold">Libya Political Trends 3D</h1>
+              <span className="pill text-sm">2019 → 2030 (forecast)</span>
+            </header>
+
+            <div className="card p-4 md:p-6 space-y-3">
+              <label className="block text-sm uppercase tracking-wider muted">Free Search</label>
+              <div className="flex gap-2">
+                <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key==='Enter' && search()}
+                  className="flex-1 px-4 py-3 rounded-xl bg-slate-800 border border-slate-700"
+                  placeholder="ابحث عن أي ترند سياسي..."/>
+                <button onClick={search} className="px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500">Search</button>
+              </div>
+              <p className="muted text-sm">Examples: "القيادة العامة للقوات المسلحة الليبية", "الانتخابات", "الدبيبة", "صدام حفتر"</p>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="card p-4 md:p-6">
+                <h2 className="text-xl font-semibold mb-2">3D Geo Distribution</h2>
+                <TrendMap3D points={points} token={token} />
+              </div>
+              <div className="card p-4 md:p-6 space-y-4">
+                <h2 className="text-xl font-semibold">Highlights</h2>
+                {loading && <p>Loading…</p>}
+                {stats && (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap gap-2">
+                      <span className="badge">Twitter: {stats.twitter?.count ?? 0}</span>
+                      <span className="badge">Facebook: {stats.facebook?.count ?? 0}</span>
+                      <span className="badge">GTrends score: {stats.gtrends?.score ?? 0}</span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="muted text-sm">Sentiment</div>
+                      <div className="flex gap-2 flex-wrap">
+                        <span className="badge">Positive {stats.sentiment?.positive ?? 0}%</span>
+                        <span className="badge">Negative {stats.sentiment?.negative ?? 0}%</span>
+                        <span className="badge">Neutral {stats.sentiment?.neutral ?? 0}%</span>
+                      </div>
+                    </div>
+                    {ai && (
+                      <div className="space-y-2">
+                        <div className="muted text-sm">AI Insight</div>
+                        <p>{ai}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!stats && <p className="muted">Run a search to see results.</p>}
+              </div>
+            </div>
+
+            <footer className="muted text-xs">
+              Built for demo purposes. Sources: Twitter (snscrape), Facebook (placeholder), Google Trends.
+            </footer>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>
